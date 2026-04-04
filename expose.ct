@@ -1,0 +1,123 @@
+import { certificate, gateway, ingress, virtualService } from "./k8s.ct";
+import {
+  type AnyRecord,
+  type Destination,
+  type ExposeConfig,
+  type IngressExposeConfig,
+  type IstioExposeConfig,
+  type WebAppResult,
+} from "./types.ct";
+
+function isWebAppResult(dest: Destination): dest is WebAppResult {
+  return typeof dest === "object" && dest !== null && "svc" in dest && "deploy" in dest;
+}
+
+function extractDestination(dest: Destination) {
+  const svc = isWebAppResult(dest) ? dest.svc : dest;
+  const svcRecord = svc as AnyRecord;
+  const metadata = (svcRecord.metadata ?? {}) as AnyRecord;
+  const spec = (svcRecord.spec ?? svcRecord) as AnyRecord;
+  const ports = (spec.ports ?? []) as Array<{ port: number }>;
+
+  return {
+    host: String(metadata.name ?? svcRecord.name),
+    port: ports[0]?.port,
+  };
+}
+
+function applyIstioExpose(config: IstioExposeConfig) {
+  const { name, host, routes, tls } = config;
+  let gatewayRef = config.gateway ?? "default/default";
+
+  if (tls) {
+    const secretName = tls.secretName ?? `${name}-tls`;
+    const certName = tls.certificateName ?? `${name}-cert`;
+
+    certificate({
+      name: certName,
+      namespace: "istio-system",
+      secretName,
+      issuerRef: { name: tls.issuer, kind: "ClusterIssuer" },
+      dnsNames: [host],
+    });
+
+    const gtw = gateway({
+      name,
+      servers: [
+        {
+          hosts: [host],
+          port: { number: 80, name: "http", protocol: "HTTP" },
+          tls: { httpsRedirect: true },
+        },
+        {
+          hosts: [host],
+          port: { number: 443, name: "https", protocol: "HTTPS" },
+          tls: { mode: "SIMPLE", credentialName: secretName },
+        },
+      ],
+    });
+
+    gatewayRef = String((gtw as AnyRecord).metadata?.name ?? (gtw as AnyRecord).name);
+  }
+
+  return virtualService({
+    name,
+    gateways: [gatewayRef],
+    hosts: [host],
+    http: routes.map((route) => {
+      const dest = extractDestination(route.destination);
+      return {
+        match: [{ uri: { prefix: route.prefix } }],
+        route: [
+          {
+            destination: {
+              host: dest.host,
+              port: { number: dest.port },
+            },
+          },
+        ],
+      };
+    }),
+  });
+}
+
+function applyIngressExpose(config: IngressExposeConfig) {
+  const { name, host, routes } = config;
+
+  return ingress({
+    name,
+    ...(config.ingressClassName && { ingressClassName: config.ingressClassName }),
+    ...(config.annotations && { annotations: config.annotations }),
+    rules: [
+      {
+        host,
+        http: {
+          paths: routes.map((route) => {
+            const dest = extractDestination(route.destination);
+            return {
+              path: route.prefix,
+              pathType: "Prefix",
+              backend: {
+                service: { name: dest.host, port: { number: dest.port } },
+              },
+            };
+          }),
+        },
+      },
+    ],
+    ...(config.tls && {
+      tls: [{ hosts: [host], secretName: config.tls.secretName }],
+    }),
+  });
+}
+
+function expose(config: ExposeConfig) {
+  switch (config.type) {
+    case "istio":
+      return applyIstioExpose(config);
+    case "ingress":
+      return applyIngressExpose(config);
+  }
+}
+
+export { expose };

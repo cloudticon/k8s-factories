@@ -1,0 +1,21 @@
+import {
+  certificate,
+  deployment,
+  gateway,
+  horizontalPodAutoscaler,
+  ingress,
+  persistentVolumeClaim,
+  service,
+  virtualService,
+} from "github.com/cloudticon/k8s@master";
+
+export {
+  deployment,
+  service,
+  persistentVolumeClaim,
+  horizontalPodAutoscaler,
+  certificate,
+  gateway,
+  virtualService,
+  ingress,
+};

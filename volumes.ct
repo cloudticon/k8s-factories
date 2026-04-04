@@ -1,0 +1,91 @@
+import { persistentVolumeClaim } from "./k8s.ct";
+import {
+  VOL_SOURCE,
+  type ConfigMapVolumeSource,
+  type EmptyDirVolumeSource,
+  type PVCOpts,
+  type PVCVolumeSource,
+  type SecretVolumeSource,
+  type VolumeSource,
+} from "./types.ct";
+
+const vol = {
+  pvc(opts: PVCOpts): PVCVolumeSource {
+    return { [VOL_SOURCE]: true, type: "pvc", create: true, opts };
+  },
+
+  emptyDir(opts?: { sizeLimit?: string }): EmptyDirVolumeSource {
+    return {
+      [VOL_SOURCE]: true,
+      type: "emptyDir",
+      spec: { emptyDir: opts ?? {} },
+    };
+  },
+
+  configMap(name: string): ConfigMapVolumeSource {
+    return {
+      [VOL_SOURCE]: true,
+      type: "configMap",
+      spec: { configMap: { name } },
+    };
+  },
+
+  secret(secretName: string): SecretVolumeSource {
+    return {
+      [VOL_SOURCE]: true,
+      type: "secret",
+      spec: { secret: { secretName } },
+    };
+  },
+};
+
+function sanitizeMountPath(mountPath: string): string {
+  return mountPath.replace(/^\//, "").replace(/\//g, "-");
+}
+
+function volumesObjectToK8s(
+  appName: string,
+  volumesObj?: Record<string, string | VolumeSource>,
+) {
+  if (!volumesObj) return { volumes: [], mounts: [] };
+
+  const volumes: Array<Record<string, unknown>> = [];
+  const mounts: Array<{ name: string; mountPath: string }> = [];
+
+  Object.entries(volumesObj).forEach(([mountPath, source]) => {
+    const volName = `vol-${sanitizeMountPath(mountPath)}`;
+
+    if (typeof source === "string") {
+      volumes.push({
+        name: volName,
+        persistentVolumeClaim: { claimName: source },
+      });
+    } else if (source.type === "pvc" && source.create) {
+      const pvcName = `${appName}-${sanitizeMountPath(mountPath)}`;
+
+      persistentVolumeClaim({
+        name: pvcName,
+        accessModes: [source.opts.accessMode ?? "ReadWriteOnce"],
+        resources: {
+          requests: { storage: source.opts.size },
+        },
+        ...(source.opts.storageClass && {
+          storageClassName: source.opts.storageClass,
+        }),
+      });
+
+      volumes.push({
+        name: volName,
+        persistentVolumeClaim: { claimName: pvcName },
+      });
+    } else {
+      volumes.push({ name: volName, ...source.spec });
+    }
+
+    mounts.push({ name: volName, mountPath });
+  });
+
+  return { volumes, mounts };
+}
+
+export { vol, sanitizeMountPath, volumesObjectToK8s };

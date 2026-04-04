@@ -1,0 +1,116 @@
+import {
+  deployment,
+  horizontalPodAutoscaler,
+  service,
+} from "github.com/cloudticon/k8s";
+import { envObjectToArray } from "./env.ct";
+import { expose } from "./expose.ct";
+import { buildHPAMetrics } from "./hpa.ct";
+import { buildProbes } from "./probes.ct";
+import { type WebAppConfig, type WebAppResult } from "./types.ct";
+import { volumesObjectToK8s } from "./volumes.ct";
+
+function webApp(config: WebAppConfig): WebAppResult {
+  const {
+    name,
+    image,
+    port,
+    replicas = 1,
+    tty = false,
+    command,
+    args,
+    env: envConfig,
+    volumes,
+    resources,
+    probes,
+    hpa: hpaConfig,
+    labels = {},
+    annotations = {},
+    expose: exposeConfig,
+    deploymentOverrides = {},
+    serviceOverrides = {},
+    imagePullSecrets,
+    serviceType,
+  } = config;
+
+  const envArray = envObjectToArray(envConfig);
+  const { volumes: k8sVolumes, mounts } = volumesObjectToK8s(name, volumes);
+  const k8sProbes = buildProbes(probes, port);
+  const allLabels = { app: name, ...labels };
+
+  const deploy = deployment({
+    name,
+    ...(Object.keys(annotations).length && { annotations }),
+    selector: { matchLabels: { app: name } },
+    replicas,
+    template: {
+      metadata: {
+        labels: allLabels,
+        ...(Object.keys(annotations).length && { annotations }),
+      },
+      spec: {
+        ...(imagePullSecrets?.length && {
+          imagePullSecrets: imagePullSecrets.map((s) => ({ name: s })),
+        }),
+        ...(k8sVolumes.length && { volumes: k8sVolumes }),
+        containers: [
+          {
+            name,
+            image,
+            tty,
+            ...(command && { command }),
+            ...(args && { args }),
+            ports: [{ containerPort: port }],
+            ...(envArray && { env: envArray }),
+            ...(mounts.length && { volumeMounts: mounts }),
+            ...(resources && { resources }),
+            ...k8sProbes,
+          },
+        ],
+      },
+    },
+    ...deploymentOverrides,
+  });
+
+  const svc = service({
+    metadata: { name, labels: allLabels },
+    name,
+    ...(serviceType && { type: serviceType }),
+    selector: { app: name },
+    ports: [{ port }],
+    ...serviceOverrides,
+  });
+
+  if (hpaConfig) {
+    horizontalPodAutoscaler({
+      name,
+      scaleTargetRef: {
+        apiVersion: "apps/v1",
+        kind: "Deployment",
+        name,
+      },
+      minReplicas: hpaConfig.min,
+      maxReplicas: hpaConfig.max,
+      metrics: buildHPAMetrics(hpaConfig),
+    });
+  }
+
+  const result: WebAppResult = { deploy, svc };
+
+  if (exposeConfig) {
+    expose({
+      ...exposeConfig,
+      name,
+      routes: [
+        {
+          prefix: exposeConfig.routePrefix ?? "/",
+          destination: result,
+        },
+      ],
+    });
+  }
+
+  return result;
+}
+
+export { webApp };

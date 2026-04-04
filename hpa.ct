@@ -1,0 +1,28 @@
+import { type HPAConfig } from "./types.ct";
+
+function buildHPAMetrics(config: HPAConfig) {
+  const metrics: Array<Record<string, unknown>> = [];
+
+  if (config.cpu) {
+    metrics.push({
+      type: "Resource",
+      resource: {
+        name: "cpu",
+        target: { type: "Utilization", averageUtilization: config.cpu },
+      },
+    });
+  }
+  if (config.memory) {
+    metrics.push({
+      type: "Resource",
+      resource: {
+        name: "memory",
+        target: { type: "Utilization", averageUtilization: config.memory },
+      },
+    });
+  }
+
+  return metrics;
+}
+
+export { buildHPAMetrics };

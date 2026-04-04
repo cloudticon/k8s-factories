@@ -1,0 +1,79 @@
+import { type K8sProbe, type ProbeDetail, type ProbesConfig } from "./types.ct";
+
+function probeFromDetail(detail: ProbeDetail, fallbackPort: number, defaultPath?: string): K8sProbe {
+  return {
+    httpGet: {
+      path: detail.path ?? defaultPath,
+      port: detail.port ?? fallbackPort,
+    },
+    ...(detail.initialDelaySeconds !== undefined && {
+      initialDelaySeconds: detail.initialDelaySeconds,
+    }),
+    ...(detail.periodSeconds !== undefined && {
+      periodSeconds: detail.periodSeconds,
+    }),
+    ...(detail.timeoutSeconds !== undefined && {
+      timeoutSeconds: detail.timeoutSeconds,
+    }),
+    ...(detail.failureThreshold !== undefined && {
+      failureThreshold: detail.failureThreshold,
+    }),
+  };
+}
+
+function buildProbes(probes: string | ProbesConfig | undefined, defaultPort: number) {
+  if (!probes) return {};
+
+  const config: ProbesConfig = typeof probes === "string" ? { path: probes } : probes;
+  const port = config.port ?? defaultPort;
+  const result: Record<string, K8sProbe> = {};
+
+  if (config.path) {
+    if (config.liveness !== false) {
+      const detail = typeof config.liveness === "object" ? config.liveness : {};
+      result.livenessProbe = {
+        httpGet: { path: config.path, port },
+        initialDelaySeconds: 15,
+        periodSeconds: 20,
+        ...probeFromDetail(detail, port, config.path),
+      };
+    }
+    if (config.readiness !== false) {
+      const detail = typeof config.readiness === "object" ? config.readiness : {};
+      result.readinessProbe = {
+        httpGet: { path: config.path, port },
+        initialDelaySeconds: 5,
+        periodSeconds: 10,
+        ...probeFromDetail(detail, port, config.path),
+      };
+    }
+  }
+
+  if (config.liveness && config.liveness !== false && !config.path) {
+    result.livenessProbe = {
+      ...probeFromDetail(config.liveness, port),
+      initialDelaySeconds: config.liveness.initialDelaySeconds ?? 15,
+      periodSeconds: config.liveness.periodSeconds ?? 20,
+    };
+  }
+
+  if (config.readiness && config.readiness !== false && !config.path) {
+    result.readinessProbe = {
+      ...probeFromDetail(config.readiness, port),
+      initialDelaySeconds: config.readiness.initialDelaySeconds ?? 5,
+      periodSeconds: config.readiness.periodSeconds ?? 10,
+    };
+  }
+
+  if (config.startup && config.startup !== false) {
+    result.startupProbe = {
+      ...probeFromDetail(config.startup, port, config.path),
+      failureThreshold: config.startup.failureThreshold ?? 30,
+      periodSeconds: config.startup.periodSeconds ?? 2,
+    };
+  }
+
+  return result;
+}
+
+export { buildProbes };

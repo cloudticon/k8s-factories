@@ -1,0 +1,201 @@
+type Primitive = string | number | boolean | null | undefined;
+type AnyRecord = Record<string, unknown>;
+
+const ENV_SOURCE = Symbol("envSource");
+const VOL_SOURCE = Symbol("volSource");
+
+type EnvSource = {
+  [ENV_SOURCE]: true;
+  valueFrom: {
+    secretKeyRef?: { name: string; key: string };
+    configMapKeyRef?: { name: string; key: string };
+  };
+};
+
+type PVCOpts = {
+  size: string;
+  storageClass?: string;
+  accessMode?: string;
+};
+
+type PVCVolumeSource = {
+  [VOL_SOURCE]: true;
+  type: "pvc";
+  create: true;
+  opts: PVCOpts;
+};
+
+type EmptyDirVolumeSource = {
+  [VOL_SOURCE]: true;
+  type: "emptyDir";
+  spec: { emptyDir: { sizeLimit?: string } };
+};
+
+type ConfigMapVolumeSource = {
+  [VOL_SOURCE]: true;
+  type: "configMap";
+  spec: { configMap: { name: string } };
+};
+
+type SecretVolumeSource = {
+  [VOL_SOURCE]: true;
+  type: "secret";
+  spec: { secret: { secretName: string } };
+};
+
+type VolumeSource =
+  | PVCVolumeSource
+  | EmptyDirVolumeSource
+  | ConfigMapVolumeSource
+  | SecretVolumeSource;
+
+type ProbeDetail = {
+  path?: string;
+  port?: number;
+  initialDelaySeconds?: number;
+  periodSeconds?: number;
+  timeoutSeconds?: number;
+  failureThreshold?: number;
+};
+
+type ProbesConfig = {
+  path?: string;
+  port?: number;
+  liveness?: ProbeDetail | false;
+  readiness?: ProbeDetail | false;
+  startup?: ProbeDetail | false;
+};
+
+type HPAConfig = {
+  min: number;
+  max: number;
+  cpu?: number;
+  memory?: number;
+};
+
+type Resources = {
+  limits?: Record<string, string>;
+  requests?: Record<string, string>;
+};
+
+type K8sProbe = {
+  httpGet: { path?: string; port: number };
+  initialDelaySeconds?: number;
+  periodSeconds?: number;
+  timeoutSeconds?: number;
+  failureThreshold?: number;
+};
+
+type ServiceResult = AnyRecord;
+type WebAppResult = {
+  deploy: AnyRecord;
+  svc: ServiceResult;
+};
+type Destination = WebAppResult | ServiceResult;
+
+type Route = {
+  prefix: string;
+  destination: Destination;
+};
+
+type TLSConfig = {
+  issuer: string;
+  secretName?: string;
+  certificateName?: string;
+};
+
+type IstioExposeConfig = {
+  name: string;
+  type: "istio";
+  host: string;
+  gateway?: string;
+  tls?: TLSConfig;
+  routes: Route[];
+};
+
+type IngressExposeConfig = {
+  name: string;
+  type: "ingress";
+  host: string;
+  ingressClassName?: string;
+  tls?: { secretName: string };
+  annotations?: Record<string, string>;
+  routes: Route[];
+};
+
+type ExposeConfig = IstioExposeConfig | IngressExposeConfig;
+type InlineExposeConfig =
+  | (Omit<IstioExposeConfig, "name" | "routes"> & { routePrefix?: string })
+  | (Omit<IngressExposeConfig, "name" | "routes"> & { routePrefix?: string });
+
+type WebAppConfig = {
+  name: string;
+  image: string;
+  port: number;
+  replicas?: number;
+  tty?: boolean;
+  command?: string[];
+  args?: string[];
+  env?: Record<string, Primitive | EnvSource>;
+  volumes?: Record<string, string | VolumeSource>;
+  resources?: Resources;
+  probes?: string | ProbesConfig;
+  hpa?: HPAConfig;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  imagePullSecrets?: string[];
+  serviceType?: "ClusterIP" | "NodePort" | "LoadBalancer";
+  expose?: InlineExposeConfig;
+  deploymentOverrides?: Record<string, unknown>;
+  serviceOverrides?: Record<string, unknown>;
+};
+
+type CreatedPVC = {
+  name: string;
+  accessModes: string[];
+  resources: { requests: { storage: string } };
+  storageClassName?: string;
+};
+
+type CreatedHPA = {
+  name: string;
+  scaleTargetRef: {
+    apiVersion: "apps/v1";
+    kind: "Deployment";
+    name: string;
+  };
+  minReplicas: number;
+  maxReplicas: number;
+  metrics: Array<Record<string, unknown>>;
+};
+
+export {
+  ENV_SOURCE,
+  VOL_SOURCE,
+  type Primitive,
+  type AnyRecord,
+  type EnvSource,
+  type PVCOpts,
+  type PVCVolumeSource,
+  type EmptyDirVolumeSource,
+  type ConfigMapVolumeSource,
+  type SecretVolumeSource,
+  type VolumeSource,
+  type ProbeDetail,
+  type ProbesConfig,
+  type HPAConfig,
+  type Resources,
+  type K8sProbe,
+  type TLSConfig,
+  type ServiceResult,
+  type WebAppResult,
+  type Destination,
+  type Route,
+  type IstioExposeConfig,
+  type IngressExposeConfig,
+  type ExposeConfig,
+  type InlineExposeConfig,
+  type WebAppConfig,
+  type CreatedPVC,
+  type CreatedHPA,
+};
