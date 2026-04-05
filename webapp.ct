@@ -2,7 +2,7 @@ import {
   deployment,
   horizontalPodAutoscaler,
   service,
-} from "github.com/cloudticon/k8s";
+} from "github.com/cloudticon/k8s@master";
 import { envObjectToArray } from "./env.ct";
 import { expose } from "./expose.ct";
 import { buildHPAMetrics } from "./hpa.ct";
