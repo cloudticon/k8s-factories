@@ -73,8 +73,8 @@ function webApp(config: WebAppConfig): WebAppResult {
   });
 
   const svc = service({
-    metadata: { name, labels: allLabels },
     name,
+    labels: allLabels,
     ...(serviceType && { type: serviceType }),
     selector: { app: name },
     ports: [{ port }],
