@@ -132,6 +132,20 @@ type InlineExposeConfig =
   | (Omit<IstioExposeConfig, "name" | "routes"> & { routePrefix?: string })
   | (Omit<IngressExposeConfig, "name" | "routes"> & { routePrefix?: string });
 
+type FactoryExposeConfig =
+  | (Omit<IstioExposeConfig, "type"> & { type?: "istio" })
+  | (Omit<IngressExposeConfig, "type"> & { type?: "ingress" });
+
+type FactoryInlineExposeConfig =
+  | (Omit<IstioExposeConfig, "name" | "routes" | "type"> & {
+      type?: "istio";
+      routePrefix?: string;
+    })
+  | (Omit<IngressExposeConfig, "name" | "routes" | "type"> & {
+      type?: "ingress";
+      routePrefix?: string;
+    });
+
 type WebAppConfig = {
   name: string;
   image: string;
@@ -152,6 +166,10 @@ type WebAppConfig = {
   expose?: InlineExposeConfig;
   deploymentOverrides?: Record<string, unknown>;
   serviceOverrides?: Record<string, unknown>;
+};
+
+type FactoryWebAppConfig = Omit<WebAppConfig, "expose"> & {
+  expose?: FactoryInlineExposeConfig;
 };
 
 type CreatedPVC = {
@@ -186,18 +204,18 @@ type FactoryConfig = {
   networking?: NetworkingConfig;
   resourcePresets?: Partial<Record<ResourcePreset, Resources>>;
   webApp?: {
-    defaults?: Partial<Omit<WebAppConfig, "name" | "image" | "port">>;
+    defaults?: Partial<Omit<FactoryWebAppConfig, "name" | "image" | "port">>;
     transform?: (config: WebAppConfig) => WebAppConfig;
   };
   expose?: {
-    defaults?: Partial<Omit<ExposeConfig, "name" | "routes">>;
+    defaults?: Partial<Omit<FactoryExposeConfig, "name" | "routes">>;
     transform?: (config: ExposeConfig) => ExposeConfig;
   };
 };
 
 type FactoryResult = {
-  webApp: (config: WebAppConfig) => WebAppResult;
-  expose: (config: ExposeConfig) => AnyRecord | undefined;
+  webApp: (config: FactoryWebAppConfig) => WebAppResult;
+  expose: (config: FactoryExposeConfig) => AnyRecord | undefined;
 };
 
 export {
@@ -226,8 +244,11 @@ export {
   type IstioExposeConfig,
   type IngressExposeConfig,
   type ExposeConfig,
+  type FactoryExposeConfig,
   type InlineExposeConfig,
+  type FactoryInlineExposeConfig,
   type WebAppConfig,
+  type FactoryWebAppConfig,
   type CreatedPVC,
   type CreatedHPA,
   type NetworkingConfig,

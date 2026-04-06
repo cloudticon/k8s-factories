@@ -4,7 +4,9 @@ import {
   type AnyRecord,
   type ExposeConfig,
   type FactoryConfig,
+  type FactoryExposeConfig,
   type FactoryResult,
+  type FactoryWebAppConfig,
   type NetworkingConfig,
   type WebAppConfig,
 } from "./types.ct";
@@ -61,11 +63,11 @@ function createFactory(factoryConfig: FactoryConfig): FactoryResult {
     ? buildExposeDefaults(factoryConfig.networking)
     : undefined;
 
-  function factoryWebApp(config: WebAppConfig) {
+  function factoryWebApp(config: FactoryWebAppConfig) {
     let merged = deepMerge(
-      (factoryConfig.webApp?.defaults ?? {}) as Partial<WebAppConfig>,
+      (factoryConfig.webApp?.defaults ?? {}) as Partial<FactoryWebAppConfig>,
       config,
-    ) as WebAppConfig;
+    ) as FactoryWebAppConfig;
 
     merged = {
       ...merged,
@@ -78,32 +80,43 @@ function createFactory(factoryConfig: FactoryConfig): FactoryResult {
         expose: deepMerge(
           networkingDefaults as Partial<WebAppConfig["expose"]>,
           merged.expose,
-        ) as WebAppConfig["expose"],
+        ) as FactoryWebAppConfig["expose"],
       };
     }
 
-    if (factoryConfig.webApp?.transform) {
-      merged = factoryConfig.webApp.transform(merged);
+    if (merged.expose && !merged.expose.type) {
+      throw new Error("Expose type is required when factory networking is not configured.");
     }
 
-    return webApp(merged);
+    if (factoryConfig.webApp?.transform) {
+      merged = factoryConfig.webApp.transform(merged as WebAppConfig);
+    }
+
+    return webApp(merged as WebAppConfig);
   }
 
-  function factoryExpose(config: ExposeConfig) {
+  function factoryExpose(config: FactoryExposeConfig) {
     let merged = deepMerge(
-      (factoryConfig.expose?.defaults ?? {}) as Partial<ExposeConfig>,
+      (factoryConfig.expose?.defaults ?? {}) as Partial<FactoryExposeConfig>,
       config,
-    ) as ExposeConfig;
+    ) as FactoryExposeConfig;
 
     if (networkingDefaults) {
-      merged = deepMerge(networkingDefaults as Partial<ExposeConfig>, merged) as ExposeConfig;
+      merged = deepMerge(
+        networkingDefaults as Partial<FactoryExposeConfig>,
+        merged,
+      ) as FactoryExposeConfig;
+    }
+
+    if (!merged.type) {
+      throw new Error("Expose type is required when factory networking is not configured.");
     }
 
     if (factoryConfig.expose?.transform) {
-      merged = factoryConfig.expose.transform(merged);
+      merged = factoryConfig.expose.transform(merged as ExposeConfig);
     }
 
-    return expose(merged);
+    return expose(merged as ExposeConfig);
   }
 
   return { webApp: factoryWebApp, expose: factoryExpose };
