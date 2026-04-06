@@ -6,6 +6,8 @@ export { buildProbes } from "./probes.ct";
 export { buildHPAMetrics } from "./hpa.ct";
 export { expose } from "./expose.ct";
 export { webApp } from "./webapp.ct";
+export { createFactory, deepMerge, buildExposeDefaults } from "./factory.ct";
+export { resolveResources, DEFAULT_RESOURCE_PRESETS } from "./resources.ct";
 
 export type {
   Primitive,
@@ -21,6 +23,7 @@ export type {
   ProbesConfig,
   HPAConfig,
   Resources,
+  ResourcePreset,
   K8sProbe,
   TLSConfig,
   ServiceResult,
@@ -34,4 +37,7 @@ export type {
   WebAppConfig,
   CreatedPVC,
   CreatedHPA,
+  NetworkingConfig,
+  FactoryConfig,
+  FactoryResult,
 } from "./types.ct";

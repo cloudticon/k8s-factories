@@ -1,0 +1,112 @@
+import { expose } from "./expose.ct";
+import { resolveResources } from "./resources.ct";
+import {
+  type AnyRecord,
+  type ExposeConfig,
+  type FactoryConfig,
+  type FactoryResult,
+  type NetworkingConfig,
+  type WebAppConfig,
+} from "./types.ct";
+import { webApp } from "./webapp.ct";
+
+function isObject(value: unknown): value is AnyRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deepMerge<T>(target: T, source: unknown): T {
+  if (!isObject(target) || !isObject(source)) {
+    if (source === undefined) return target;
+    return source as T;
+  }
+
+  const result: AnyRecord = { ...target };
+  for (const key of Object.keys(source)) {
+    const sourceValue = source[key];
+    if (sourceValue === undefined) continue;
+
+    const targetValue = result[key];
+    if (isObject(targetValue) && isObject(sourceValue)) {
+      result[key] = deepMerge(targetValue, sourceValue);
+      continue;
+    }
+
+    result[key] = sourceValue;
+  }
+
+  return result as T;
+}
+
+function buildExposeDefaults(networking: NetworkingConfig): Partial<ExposeConfig> {
+  if (networking.type === "istio") {
+    return {
+      type: "istio",
+      ...(networking.gateway && { gateway: networking.gateway }),
+      ...(networking.tls && { tls: networking.tls }),
+    };
+  }
+
+  return {
+    type: "ingress",
+    ...(networking.ingressClassName && {
+      ingressClassName: networking.ingressClassName,
+    }),
+    ...(networking.annotations && { annotations: networking.annotations }),
+    ...(networking.tls && { tls: networking.tls }),
+  };
+}
+
+function createFactory(factoryConfig: FactoryConfig): FactoryResult {
+  const networkingDefaults = factoryConfig.networking
+    ? buildExposeDefaults(factoryConfig.networking)
+    : undefined;
+
+  function factoryWebApp(config: WebAppConfig) {
+    let merged = deepMerge(
+      (factoryConfig.webApp?.defaults ?? {}) as Partial<WebAppConfig>,
+      config,
+    ) as WebAppConfig;
+
+    merged = {
+      ...merged,
+      resources: resolveResources(merged.resources, factoryConfig.resourcePresets),
+    };
+
+    if (merged.expose && networkingDefaults) {
+      merged = {
+        ...merged,
+        expose: deepMerge(
+          networkingDefaults as Partial<WebAppConfig["expose"]>,
+          merged.expose,
+        ) as WebAppConfig["expose"],
+      };
+    }
+
+    if (factoryConfig.webApp?.transform) {
+      merged = factoryConfig.webApp.transform(merged);
+    }
+
+    return webApp(merged);
+  }
+
+  function factoryExpose(config: ExposeConfig) {
+    let merged = deepMerge(
+      (factoryConfig.expose?.defaults ?? {}) as Partial<ExposeConfig>,
+      config,
+    ) as ExposeConfig;
+
+    if (networkingDefaults) {
+      merged = deepMerge(networkingDefaults as Partial<ExposeConfig>, merged) as ExposeConfig;
+    }
+
+    if (factoryConfig.expose?.transform) {
+      merged = factoryConfig.expose.transform(merged);
+    }
+
+    return expose(merged);
+  }
+
+  return { webApp: factoryWebApp, expose: factoryExpose };
+}
+
+export { deepMerge, buildExposeDefaults, createFactory };

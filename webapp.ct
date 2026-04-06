@@ -7,6 +7,7 @@ import { envObjectToArray } from "./env.ct";
 import { expose } from "./expose.ct";
 import { buildHPAMetrics } from "./hpa.ct";
 import { buildProbes } from "./probes.ct";
+import { resolveResources } from "./resources.ct";
 import { type WebAppConfig, type WebAppResult } from "./types.ct";
 import { volumesObjectToK8s } from "./volumes.ct";
 
@@ -36,6 +37,7 @@ function webApp(config: WebAppConfig): WebAppResult {
   const envArray = envObjectToArray(envConfig);
   const { volumes: k8sVolumes, mounts } = volumesObjectToK8s(name, volumes);
   const k8sProbes = buildProbes(probes, port);
+  const resolvedResources = resolveResources(resources);
   const allLabels = { app: name, ...labels };
 
   const deploy = deployment({
@@ -63,7 +65,7 @@ function webApp(config: WebAppConfig): WebAppResult {
             ports: [{ containerPort: port }],
             ...(envArray && { env: envArray }),
             ...(mounts.length && { volumeMounts: mounts }),
-            ...(resources && { resources }),
+            ...(resolvedResources && { resources: resolvedResources }),
             ...k8sProbes,
           },
         ],
@@ -95,7 +97,10 @@ function webApp(config: WebAppConfig): WebAppResult {
     });
   }
 
-  const result: WebAppResult = { deploy, svc };
+  const result: WebAppResult = {
+    deploy: deploy as unknown as Record<string, unknown>,
+    svc: svc as unknown as Record<string, unknown>,
+  };
 
   if (exposeConfig) {
     expose({

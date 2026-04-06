@@ -1,0 +1,28 @@
+import { type ResourcePreset, type Resources } from "./types.ct";
+
+const DEFAULT_RESOURCE_PRESETS: Record<ResourcePreset, Resources> = {
+  small: {
+    requests: { cpu: "100m", memory: "128Mi" },
+    limits: { cpu: "250m", memory: "256Mi" },
+  },
+  medium: {
+    requests: { cpu: "250m", memory: "256Mi" },
+    limits: { cpu: "500m", memory: "512Mi" },
+  },
+  large: {
+    requests: { cpu: "500m", memory: "512Mi" },
+    limits: { cpu: "1000m", memory: "1Gi" },
+  },
+};
+
+function resolveResources(
+  input: ResourcePreset | Resources | undefined,
+  customPresets?: Partial<Record<ResourcePreset, Resources>>,
+): Resources | undefined {
+  if (!input) return undefined;
+  if (typeof input !== "string") return input;
+
+  return customPresets?.[input] ?? DEFAULT_RESOURCE_PRESETS[input];
+}
+
+export { DEFAULT_RESOURCE_PRESETS, resolveResources };

@@ -6,6 +6,7 @@ It provides two main helpers:
 
 - `webApp()` for `Deployment` + `Service` (+ optional `HPA`, PVC creation, and inline expose)
 - `expose()` for routing (`VirtualService`/`Ingress`) with optional TLS artifacts
+- `createFactory()` for shared platform defaults (`webApp` + `expose`)
 
 ## Import
 
@@ -65,7 +66,7 @@ type WebAppResult = {
 | `args` | `string[]` | none | Container args override. |
 | `env` | `Record<string, Primitive \| EnvSource>` | none | Environment variables (plain values or `env.*` references). |
 | `volumes` | `Record<string, string \| VolumeSource>` | none | Volume map where key is mount path. |
-| `resources` | `Resources` | none | Container CPU/memory requests and limits. |
+| `resources` | `ResourcePreset \| Resources` | none | Container CPU/memory requests and limits. |
 | `probes` | `string \| ProbesConfig` | none | Liveness/readiness/startup probe configuration. |
 | `hpa` | `HPAConfig` | none | HPA min/max and optional CPU/memory targets. |
 | `labels` | `Record<string, string>` | `{}` | Extra labels for workload/service metadata. |
@@ -81,6 +82,20 @@ Notes:
 - `app: <name>` label is always set and merged with custom labels.
 - If `hpa` is provided, `replicas` is the initial value and HPA controls scaling afterward.
 - Inline `expose` maps one route with `routePrefix` (default `/`) to the created service.
+
+### Resource presets
+
+`resources` supports string presets:
+
+```typescript
+resources: "small"  // or "medium" | "large"
+```
+
+Built-in presets:
+
+- `small`: requests `100m/128Mi`, limits `250m/256Mi`
+- `medium`: requests `250m/256Mi`, limits `500m/512Mi`
+- `large`: requests `500m/512Mi`, limits `1000m/1Gi`
 
 ## API Reference: `expose(config)`
 
@@ -107,14 +122,17 @@ type TLSConfig = {
   issuer: string;
   secretName?: string;      // default: `${name}-tls`
   certificateName?: string; // default: `${name}-cert`
+  createCertificate?: boolean; // default: true
+  createGateway?: boolean;     // default: true
 };
 ```
 
 When `tls` is set for Istio exposure, helper creates:
 
 - `Certificate` in namespace `istio-system`
-- dedicated `Gateway` with HTTP redirect and HTTPS server
+- dedicated `Gateway` with HTTP redirect and HTTPS server (unless `gateway` is provided or `createGateway: false`)
 - `VirtualService` bound to that gateway
+- if `gateway` is explicitly provided with `tls`, helper reuses that gateway and only creates cert by default
 
 ### `IstioExposeConfig`
 
@@ -125,7 +143,7 @@ When `tls` is set for Istio exposure, helper creates:
 | `host` | `string` | required | External host. |
 | `gateway` | `string` | `"default/default"` | Shared gateway reference when `tls` is not set. |
 | `tls` | `TLSConfig` | none | Enables cert + dedicated gateway generation. |
-| `routes` | `Route[]` | required | Prefix-based route list. |
+| `routes` | `(Route \| false \| null \| undefined)[]` | required | Prefix-based route list; falsy entries are ignored. |
 
 ### `IngressExposeConfig`
 
@@ -137,7 +155,7 @@ When `tls` is set for Istio exposure, helper creates:
 | `ingressClassName` | `string` | none | Optional ingress class. |
 | `tls` | `{ secretName: string }` | none | TLS block for ingress. |
 | `annotations` | `Record<string, string>` | none | Ingress annotations. |
-| `routes` | `Route[]` | required | Prefix-based route list. |
+| `routes` | `(Route \| false \| null \| undefined)[]` | required | Prefix-based route list; falsy entries are ignored. |
 
 ## `env.*` helpers
 
@@ -383,6 +401,40 @@ webApp({
   port: 6379,
 });
 ```
+
+## Factory
+
+`createFactory()` builds wrapped `webApp` and `expose` helpers with shared defaults and optional transforms.
+
+```typescript
+import { createFactory } from "github.com/cloudticon/k8s@master";
+
+export const { webApp, expose } = createFactory({
+  networking: {
+    type: "istio",
+    gateway: "shared-gateway/default",
+    tls: { issuer: "letsencrypt-prod" },
+  },
+  resourcePresets: {
+    small: {
+      requests: { cpu: "50m", memory: "64Mi" },
+      limits: { cpu: "200m", memory: "128Mi" },
+    },
+  },
+  webApp: {
+    defaults: { replicas: 2, probes: "/health", resources: "medium" },
+    transform: (config) => ({
+      ...config,
+      labels: { ...config.labels, "managed-by": "platform-team" },
+    }),
+  },
+  expose: {
+    transform: (config) => config,
+  },
+});
+```
+
+Both original `webApp()` and `expose()` still work standalone without factory.
 
 ## File layout (`.ct`)
 

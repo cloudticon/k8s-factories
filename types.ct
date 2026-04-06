@@ -78,6 +78,8 @@ type Resources = {
   requests?: Record<string, string>;
 };
 
+type ResourcePreset = "small" | "medium" | "large";
+
 type K8sProbe = {
   httpGet: { path?: string; port: number };
   initialDelaySeconds?: number;
@@ -102,6 +104,8 @@ type TLSConfig = {
   issuer: string;
   secretName?: string;
   certificateName?: string;
+  createCertificate?: boolean;
+  createGateway?: boolean;
 };
 
 type IstioExposeConfig = {
@@ -110,7 +114,7 @@ type IstioExposeConfig = {
   host: string;
   gateway?: string;
   tls?: TLSConfig;
-  routes: Route[];
+  routes: (Route | false | null | undefined)[];
 };
 
 type IngressExposeConfig = {
@@ -120,7 +124,7 @@ type IngressExposeConfig = {
   ingressClassName?: string;
   tls?: { secretName: string };
   annotations?: Record<string, string>;
-  routes: Route[];
+  routes: (Route | false | null | undefined)[];
 };
 
 type ExposeConfig = IstioExposeConfig | IngressExposeConfig;
@@ -138,7 +142,7 @@ type WebAppConfig = {
   args?: string[];
   env?: Record<string, Primitive | EnvSource>;
   volumes?: Record<string, string | VolumeSource>;
-  resources?: Resources;
+  resources?: ResourcePreset | Resources;
   probes?: string | ProbesConfig;
   hpa?: HPAConfig;
   labels?: Record<string, string>;
@@ -169,6 +173,33 @@ type CreatedHPA = {
   metrics: Array<Record<string, unknown>>;
 };
 
+type NetworkingConfig =
+  | { type: "istio"; gateway?: string; tls?: TLSConfig }
+  | {
+      type: "ingress";
+      ingressClassName?: string;
+      annotations?: Record<string, string>;
+      tls?: { secretName: string };
+    };
+
+type FactoryConfig = {
+  networking?: NetworkingConfig;
+  resourcePresets?: Partial<Record<ResourcePreset, Resources>>;
+  webApp?: {
+    defaults?: Partial<Omit<WebAppConfig, "name" | "image" | "port">>;
+    transform?: (config: WebAppConfig) => WebAppConfig;
+  };
+  expose?: {
+    defaults?: Partial<Omit<ExposeConfig, "name" | "routes">>;
+    transform?: (config: ExposeConfig) => ExposeConfig;
+  };
+};
+
+type FactoryResult = {
+  webApp: (config: WebAppConfig) => WebAppResult;
+  expose: (config: ExposeConfig) => AnyRecord | undefined;
+};
+
 export {
   ENV_SOURCE,
   VOL_SOURCE,
@@ -185,6 +216,7 @@ export {
   type ProbesConfig,
   type HPAConfig,
   type Resources,
+  type ResourcePreset,
   type K8sProbe,
   type TLSConfig,
   type ServiceResult,
@@ -198,4 +230,7 @@ export {
   type WebAppConfig,
   type CreatedPVC,
   type CreatedHPA,
+  type NetworkingConfig,
+  type FactoryConfig,
+  type FactoryResult,
 };

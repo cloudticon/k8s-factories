@@ -5,6 +5,7 @@ import {
   type ExposeConfig,
   type IngressExposeConfig,
   type IstioExposeConfig,
+  type Route,
   type WebAppResult,
 } from "./types.ct";
 
@@ -27,44 +28,55 @@ function extractDestination(dest: Destination) {
 
 function applyIstioExpose(config: IstioExposeConfig) {
   const { name, host, routes, tls } = config;
+  const validRoutes = routes.filter((route): route is Route => Boolean(route));
   let gatewayRef = config.gateway ?? "default/default";
 
   if (tls) {
     const secretName = tls.secretName ?? `${name}-tls`;
     const certName = tls.certificateName ?? `${name}-cert`;
+    const shouldCreateCertificate = tls.createCertificate !== false;
+    const shouldCreateGateway = tls.createGateway !== false && !config.gateway;
 
-    certificate({
-      name: certName,
-      namespace: "istio-system",
-      secretName,
-      issuerRef: { name: tls.issuer, kind: "ClusterIssuer" },
-      dnsNames: [host],
-    });
+    if (shouldCreateCertificate) {
+      certificate({
+        name: certName,
+        namespace: "istio-system",
+        secretName,
+        issuerRef: { name: tls.issuer, kind: "ClusterIssuer" },
+        dnsNames: [host],
+      });
+    }
 
-    const gtw = gateway({
-      name,
-      servers: [
-        {
-          hosts: [host],
-          port: { number: 80, name: "http", protocol: "HTTP" },
-          tls: { httpsRedirect: true },
-        },
-        {
-          hosts: [host],
-          port: { number: 443, name: "https", protocol: "HTTPS" },
-          tls: { mode: "SIMPLE", credentialName: secretName },
-        },
-      ],
-    });
+    if (shouldCreateGateway) {
+      const gtw = gateway({
+        name,
+        servers: [
+          {
+            hosts: [host],
+            port: { number: 80, name: "http", protocol: "HTTP" },
+            tls: { httpsRedirect: true },
+          },
+          {
+            hosts: [host],
+            port: { number: 443, name: "https", protocol: "HTTPS" },
+            tls: { mode: "SIMPLE", credentialName: secretName },
+          },
+        ],
+      });
 
-    gatewayRef = String((gtw as AnyRecord).metadata?.name ?? (gtw as AnyRecord).name);
+      const gatewayResource = gtw as unknown as {
+        metadata?: { name?: string };
+        name?: string;
+      };
+      gatewayRef = String(gatewayResource.metadata?.name ?? gatewayResource.name);
+    }
   }
 
   return virtualService({
     name,
     gateways: [gatewayRef],
     hosts: [host],
-    http: routes.map((route) => {
+    http: validRoutes.map((route) => {
       const dest = extractDestination(route.destination);
       return {
         match: [{ uri: { prefix: route.prefix } }],
@@ -83,6 +95,7 @@ function applyIstioExpose(config: IstioExposeConfig) {
 
 function applyIngressExpose(config: IngressExposeConfig) {
   const { name, host, routes } = config;
+  const validRoutes = routes.filter((route): route is Route => Boolean(route));
 
   return ingress({
     name,
@@ -92,7 +105,7 @@ function applyIngressExpose(config: IngressExposeConfig) {
       {
         host,
         http: {
-          paths: routes.map((route) => {
+          paths: validRoutes.map((route) => {
             const dest = extractDestination(route.destination);
             return {
               path: route.prefix,
